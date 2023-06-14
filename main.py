@@ -1,23 +1,31 @@
 import heapq
 from collections import defaultdict
+import copy
+
 
 class Assignment():
   def __init__(self, instruction, assignments):
     self.assignments = assignments
 
-start_state = {
-  "rax": 1,
-  "rcx": 2,
-  "rdx": 3,
-  "rbx": 4,
+start_state = { 
+  "memory": [
+    0, 0, 0, 0
+  ],
+  "rax": 0,
+  "rcx": 1,
+  "rdx": 2,
+  "rbx": 3,
   "rsp": -1
 }
 
 end_state = {
-  "rax": 4,
-  "rcx": 3,
-  "rdx": 2,
-  "rbx": 1,
+  "memory": [
+    3, 1, 2, 0
+  ],
+  "rax": 3,
+  "rcx": 2,
+  "rdx": 1,
+  "rbx": 0,
   "rsp": -1
 }
 
@@ -48,20 +56,57 @@ class Node():
 fScore = defaultdict(lambda: float('inf'))
 
 
-def find_neighbours(node):
+def find_neighbours(node, goal):
   if node.neighbourscreated:
     return node.neighbours
     
   node.neighbourscreated = True
   candidates = []
+
+ 
+    # candidates.append(Node(movement, node.fScore, "mov ${}, %{}".format(item, "rax")))
+
+  if node.state["memory"] != goal.state["memory"]:
+    for memory_location, value_in_memory in enumerate(goal.state["memory"]):
+      if node.state["memory"][memory_location] != goal.state["memory"][memory_location]:
+          for memory_location_key, memory_location_register in node.state.items():
+            
+            # We found a memory location in a register
+            if memory_location_key != "memory":
+   
+              if memory_location_register == memory_location:
+                for current_key, current_value in node.state.items():
+                  if current_key != "memory":
+                    # We found a register that matches the desired memory value in memory
+                    if current_value == value_in_memory:
+                        # print("found wanted value {}".format(value_in_memory))
+                        movement = copy.deepcopy(node.state)
+                        
+                        movement["memory"][memory_location] = value_in_memory
+                        # movement["rax"] = -1
+                        candidates.append(Node(movement, node.fScore, "mov %{}, (%{})".format(memory_location_key, current_key)))
+                        found = True
+                        break
+                if found:
+                  break
+          if found:
+            break
+      
+    
   for key, value in node.state.items():
+    
+    if key == "memory":
+      continue
+      
     if value == -1:
       for register in ["rax", "rcx", "rdx", "rbx", "rsp"]:
-        movement = dict(node.state)
+        movement = copy.deepcopy(node.state)
         movement[key] = movement[register]
         movement[register] = -1
         candidates.append(Node(movement, node.fScore, "mov %{}, %{}".format(register, key)))
+        
   node.neighbours = candidates
+  # print(candidates)
   return candidates
 
 start_node = Node(start_state, fScore, "start")
@@ -70,10 +115,21 @@ end_node = Node(end_state, fScore, "end")
 def h(start, goal):
   total = 0
   for key, value in start.state.items():
-    if value != goal.state[key]:
-      total = total + 1
+    if key == "memory":
+      for index, item in enumerate(start.state[key]):
+        if goal.state[key][index] != goal.state[key][index]:
+          total = total + (goal.state[key][index] - goal.state[key][index])
+    else:
+      
+        if value != goal.state[key]:
+          total = total + 1
+ 
   return total
 
+def same(current, goal):
+  if current.state == goal.state:
+    return True
+  return False
 
 # A* finds a path from start to goal.
 # h is the heuristic function. h(n) estimates the cost to reach goal from node n.
@@ -100,11 +156,11 @@ def A_Star(start, goal, h, fScore):
         # This operation can occur in O(Log(N)) time if openSet is a min-heap or a priority queue
         current = heapq.heappop(openSet) # the node in openSet having the lowest fScore[] value
         heapq.heappush(openSet, current)
-        if current.state == goal.state:
+        if same(current, goal):
             return reconstruct_path(cameFrom, current)
 
         openSet.remove(current)
-        for neighbour in find_neighbours(current):
+        for neighbour in find_neighbours(current, goal):
             # d(current,neighbor) is the weight of the edge from current to neighbor
             # tentative_gScore is the distance from start to the neighbor through current
             tentative_gScore = gScore[current] + 1# d(current, neighbor)
