@@ -219,9 +219,11 @@ def A_Star(start, goal, h, fScore, worker_len):
     found = False
     while thread_running:
       # print("thread running loop")
+
       for i in range(0, 30):
         try:
           # print("receive test")
+
           received = my_queue.get_nowait()
           
           # print("Process received {}".format(received))
@@ -257,9 +259,11 @@ def A_Star(start, goal, h, fScore, worker_len):
              
               # heapq.heappush(openSet, neighbour)
               # heapq.heapify(openSet)
+
         except Exception as e:
         
           pass
+
 
       while len(openSet) > 0:
         # print("openset loop")
@@ -273,6 +277,7 @@ def A_Star(start, goal, h, fScore, worker_len):
               if work == "finish":
 
                 # print("received request to finish")
+
 
                 thread_running = False
                 try:
@@ -297,7 +302,7 @@ def A_Star(start, goal, h, fScore, worker_len):
                 # heapq.heapify(openSet)
                 # heapq.heappush(openSet, neighbour)
           except Exception as e:
-            
+
             pass
 
         # This operation can occur in O(Log(N)) time if openSet is a min-heap or a priority queue
