@@ -280,12 +280,12 @@ def A_Star(start, goal, h, fScore, worker_len):
 
 
                 thread_running = False
-                try:
-                  while not my_queue.empty():
-                    my_queue.get_nowait()
-                except:
-                  pass
-                my_queue.close()
+                # try:
+                #   while not my_queue.empty():
+                #     my_queue.get_nowait()
+                # except:
+                #   pass
+                # my_queue.close()
                 print("thread received stop message {}".format(my_id))
                 parent.put((my_id, "finished", (myCameFrom, None)))
                 return
@@ -426,6 +426,6 @@ def A_Star(start, goal, h, fScore, worker_len):
 
 
 if __name__ == "__main__":
-  search = A_Star(start_node, end_node, h, fScore, 2)
+  search = A_Star(start_node, end_node, h, fScore, 8)
   print(search)
   print(search[-1].state)
