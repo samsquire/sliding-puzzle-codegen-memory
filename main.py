@@ -173,9 +173,10 @@ def A_Star(start, goal, h, fScore, worker_len):
     openSet = []
     end = None
     received = my_queue.get()
+    my_queue.task_done()
     print(received)
     if received:
-      my_id, work, args = received
+      _my_id, work, args = received
       
       if work == "start":
         origin = args[0]
@@ -184,7 +185,9 @@ def A_Star(start, goal, h, fScore, worker_len):
         origin = args[0]
         end = args[1]
         heapq.heappush(openSet, args[0])
-  
+    
+    
+    
     # For node n, gScore[n] is the cost of the cheapest path from start to n currently known.
     gScore = defaultdict(lambda: float('inf'))
     gScore[origin] = 0
@@ -197,50 +200,55 @@ def A_Star(start, goal, h, fScore, worker_len):
     found = False
     while thread_running:
       # print("thread running loop")
-      try:
-        
-        received = my_queue.get_nowait()
-        # print("Process received {}".format(received))
-        if received:
-          _my_id, work, args = received
-          if work == "finish":
-            thread_running = False
+      for i in range(0, 30):
+        try:
+          # print("receive test")
+          received = my_queue.get_nowait()
+          
+          # print("Process received {}".format(received))
+          if received:
+            my_queue.task_done()
+            _my_id, work, args = received
             
-            # try:
-            #     while not my_queue.empty():
-            #       my_queue.get_nowait()
-            # except:
-            #     pass
-            # my_queue.close()
-            print("thread received stop message")
-            parent.put((my_id, "finished", (myCameFrom, None)))
-            return
-          if work == "newnode":
-            current = args[1]
-            update_node(my_id, openSet, args[0], gScore, myCameFrom, fScore, current, my_queue, queues, end)
-            # heapq.heappush(openSet, args[0])
-          if work == "update":
-            # print("updating values")
-            neighbour = args[0]
-            gScore[neighbour] = args[1]
-            fScore[neighbour] = args[2]
-            # heapq.heappop(neighbour) # the node in openSet having the lowest fScore[] value
-           
-            # heapq.heappush(openSet, neighbour)
-            # heapq.heapify(openSet)
-      except Exception as e:
-      
-        pass
+            if work == "finish":
+              thread_running = False
+              
+              # try:
+              #     while not my_queue.empty():
+              #       my_queue.get_nowait()
+              # except:
+              #     pass
+              # my_queue.close()
+              print("thread received stop message")
+              parent.put((my_id, "finished", (myCameFrom, None)))
+              return
+            if work == "newnode":
+              current = args[1]
+              update_node(my_id, openSet, args[0], gScore, myCameFrom, fScore, current, my_queue, queues, end)
+              # heapq.heappush(openSet, args[0])
+            if work == "update":
+              # print("updating values")
+              neighbour = args[0]
+              gScore[neighbour] = args[1]
+              fScore[neighbour] = args[2]
+              # heapq.heappop(neighbour) # the node in openSet having the lowest fScore[] value
+             
+              # heapq.heappush(openSet, neighbour)
+              # heapq.heapify(openSet)
+        except Exception as e:
+        
+          pass
       while len(openSet) > 0:
         # print("openset loop")
-        while not my_queue.empty():
+        for i in range(0, 30):
           try:
             received = my_queue.get_nowait()
+            my_queue.task_done()
             # print("Process received {}".format(received))
             if received:
-              my_id, work, args = received
+              _my_id, work, args = received
               if work == "finish":
-                print("received request to finish")
+                # print("received request to finish")
                 thread_running = False
                 # try:
                 #   while not my_queue.empty():
@@ -268,28 +276,30 @@ def A_Star(start, goal, h, fScore, worker_len):
           
         # This operation can occur in O(Log(N)) time if openSet is a min-heap or a priority queue
         current = heapq.heappop(openSet) # the node in openSet having the lowest fScore[] value
-        heapq.heappush(openSet, current)
+        # heapq.heappush(openSet, current)
         if same(current, end):
-            # print("found goal")
+            print("found goal")
             for index, queue in enumerate(queues):
               if index != my_id:
 
-                queue.put((my_id, "finish", 0))
+                queue.put((index, "finish", 0))
+                print("asked {} to stop".format(index))
             parent.put((my_id, "finished", (myCameFrom, current)))
             thread_running = False
             found = True
             
            
             # print("returning")
-            return
+            break
             
             
             
 
      
-        openSet.remove(current)
+        # openSet.remove(current)
         for index, neighbour in enumerate(find_neighbours(current, end)):
-          if index % worker_len == my_id:
+          
+          if worker_len > index % worker_len == my_id:
             for index, queue in enumerate(queues):
                 if index != my_id:
                   queue.put((my_id, "newnode", (neighbour, current)))
@@ -333,7 +343,8 @@ def A_Star(start, goal, h, fScore, worker_len):
   current = None
   while running:
       received = parent.get()
-      my_id, work, args = received
+      parent.task_done()
+      _my_id, work, args = received
       if received:
         # print("Received {} {}".format(work, args))
         if work == "finished":
@@ -381,6 +392,6 @@ def A_Star(start, goal, h, fScore, worker_len):
   return "failure"
 
 if __name__ == "__main__":
-  search = A_Star(start_node, end_node, h, fScore, 8)
+  search = A_Star(start_node, end_node, h, fScore, 2)
   print(search)
   print(search[-1].state)
