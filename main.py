@@ -3,6 +3,8 @@ from collections import defaultdict
 import copy
 import multiprocessing
 import random
+lifetime = [0, 1, 2, 3, -1]
+
 registers = ["rax", "rcx", "rdx", "rbx", "rsp", "rdi", "rbp"]
 start_state = {
   "memory": [0, 0, 0, 0],
@@ -38,7 +40,7 @@ class Function:
 
 minus_1_to_four = Function("minus1", -1, 4)
 four_to_five = Function("fourtofive", 4, 5)
-five_to_six = Function("fourtofive", 5, 6)
+five_to_six = Function("fivetosix", 5, 6)
 
 functions = [minus_1_to_four, four_to_five, five_to_six]
 
@@ -94,27 +96,38 @@ class Node():
 
 fScore = {}
 
-
+from collections import Counter
 def find_neighbours(node, goal, function_index):
+
   if node.neighbourscreated:
     return node.neighbours
 
   node.neighbourscreated = True
   candidates = []
+  instructions = []
+  movement = dict(node.state)
+  movement["memory"] = list(node.state["memory"])
   found = False
   found_function = False
   # candidates.append(Node(movement, node.fScore, "mov ${}, %{}".format(item, "rax")))
 
-  # for register in registers:
-  #   movement = dict(node.state)
-  #   movement["memory"] = list(node.state["memory"])
+  for register in registers:
+    if node.state[register] == goal.state[register]:
+      continue
+    c = Counter(filter(lambda x: not type(x) == list, node.state.values()))
+    
+    d = Counter(filter(lambda x: not type(x) == list, goal.state.values()))
+    if c[movement[register]] == 1 and d[movement[register]] > 0:
+            continue
+    movement3 = dict(movement)
+    movement3["memory"] = list(node.state["memory"])
   
-  #   movement[register] = -1
-  #   # movement["rax"] = -1
-  #   candidates.append(
-  #     Node(
-  #       movement, node.fScore,
-  #       "mov $-1, %{}".format(register)))
+    movement3[register] = -1
+    # movement["rax"] = -1
+    candidates.append(
+      Node(
+        movement3, node.fScore,
+        "mov $-1, %{}".format(register)))
   
   for source_index, source_register in enumerate(registers):
     
@@ -122,6 +135,23 @@ def find_neighbours(node, goal, function_index):
       # we have found a source parameter
       for candidate_function in function_index[node.state[source_register]]: 
         for destination_index, destination_register in enumerate(registers):
+          if node.state[destination_register] == goal.state[destination_register]:
+            continue
+          for key, value in movement.items():
+            if value == candidate_function.output:
+              # we already have this function's output available
+              continue
+          # found_valid = False
+          # for impossible_function in function_index[candidate_function.output]:
+          #   if impossible_function.output == goal.state[destination_register]:
+          #     found_valid = True
+
+          # if not found_valid:
+          #   continue
+          c = Counter(filter(lambda x: not type(x) == list, node.state.values()))
+          d = Counter(filter(lambda x: not type(x) == list, goal.state.values()))
+          if c[movement[destination_register]] == 1 and d[movement[destination_register]] > 0:
+            continue
           movement = dict(node.state)
           movement["memory"] = list(node.state["memory"])
           movement[destination_register] = candidate_function.output
@@ -130,14 +160,14 @@ def find_neighbours(node, goal, function_index):
           looking = True
           instructions = []
           instructions.append("call %{}({}) -> {}".format(candidate_function.name, node.state[source_register], candidate_function.output))
-          while looking:
-            if movement[destination_register] not in function_index or len(function_index[movement[destination_register]]) == 0:
-              looking = False
-              break
-            for candidate_function in     function_index[movement[destination_register]]:
-              movement[destination_register] = candidate_function.output
-              instructions.append("call %{}({}) -> {}".format(candidate_function.name, movement[destination_register], candidate_function.output))
-              
+          # while looking:
+          #   if movement[destination_register] not in function_index or len(function_index[movement[destination_register]]) == 0:
+          #     looking = False
+          #     break
+          #   for candidate_function in     function_index[movement[destination_register]]:
+          #     movement[destination_register] = candidate_function.output
+          #     instructions.append("call %{}({}) -> {}".format(candidate_function.name, movement[destination_register], candidate_function.output))
+          
           # movement["rax"] = -1
           candidates.append(
             Node(
@@ -167,16 +197,17 @@ def find_neighbours(node, goal, function_index):
                   # We found a register that matches the desired memory value in memory
                   if current_value == value_in_memory:
                     # print("found wanted value {}".format(value_in_memory))
-                    movement = dict(node.state)
-                    movement["memory"] = list(node.state["memory"])
-
+                  
+                    
                     movement["memory"][memory_location] = value_in_memory
                     # movement["rax"] = -1
+                    moveinstruction =  "mov %{}, (%{})".format(memory_location_key,
+                                                current_key)
+                    instructions.append(moveinstruction)
                     candidates.append(
-                      Node(
-                        movement, node.fScore,
-                        "mov %{}, (%{})".format(memory_location_key,
-                                                current_key)))
+                     Node(
+                       movement, node.fScore,
+                           " ".join(instructions)))
                     found = True
                     break
               if found:
@@ -189,14 +220,22 @@ def find_neighbours(node, goal, function_index):
     if key == "memory":
       continue
 
-    if value == -1:
-      for register in registers:
-        movement = dict(node.state)
-        movement["memory"] = list(node.state["memory"])
-        movement[key] = movement[register]
-        movement[register] = -1
-        candidates.append(
-          Node(movement, node.fScore, "mov %{}, %{}".format(register, key)))
+ 
+    for register in registers:
+      c = Counter(filter(lambda x: not type(x) == list, node.state.values()))
+      d = Counter(filter(lambda x: not type(x) == list, goal.state.values()))
+      if c[movement[key]] == 1 and d[movement[key]] > 0:
+        continue
+      
+      movement2 = dict(node.state)
+ 
+      movement2["memory"] = list(movement["memory"])
+      movement2[key] = movement2[register]
+      # movement2[register] = -1
+      myinstructions = []
+      myinstructions.append("mov %{}, %{}".format(register, key))
+      candidates.append(
+      Node(movement2, node.fScore, " ".join(myinstructions)))
         
 
   node.neighbours = candidates
@@ -217,11 +256,16 @@ def h(start, goal):
         if start.state[key][index] != goal.state[key][index]:
           # total = total + (goal.state[key][index] - goal.state[key][index])
           total = total + 1
+        
     else:
 
       if value != goal.state[key]:
         total = total + 1
+      
 
+ 
+  
+  
   return total
 
 
@@ -245,15 +289,15 @@ def update_node(my_id, openSet, neighbour, gScore, myCameFrom, fScore, current,
       heapq.heappush(openSet, neighbour)
       for index, queue in enumerate(queues):
         if my_id != index:
-          pass
-          # queue.put((my_id, "update", (neighbour, gScore[neighbour],
-                                       # fScore[neighbour], True)))
+          # pass
+            queue.put((my_id, "update", (neighbour, gScore[neighbour],
+                                        fScore[neighbour], True)))
     else:
       for index, queue in enumerate(queues):
         if my_id != index:
-          pass
-          # queue.put((my_id, "update", (neighbour, gScore[neighbour],
-                                       # fScore[neighbour], False)))
+          # pass
+            queue.put((my_id, "update", (neighbour, gScore[neighbour],
+                                        fScore[neighbour], False)))
 
 
 # A* finds a path from start to goal.
@@ -385,6 +429,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
         # This operation can occur in O(Log(N)) time if openSet is a min-heap or a priority queue
         current = heapq.heappop(openSet) # the node in openSet having the lowest fScore[] value
         # heapq.heappush(openSet, current)
+        # print(current.state)
         if same(current, end):
             print("found goal")
             for index, queue in enumerate(queues):
