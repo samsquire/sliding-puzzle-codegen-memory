@@ -2,14 +2,17 @@ import heapq
 from collections import defaultdict
 import copy
 import multiprocessing
-
+import random
+registers = ["rax", "rcx", "rdx", "rbx", "rsp", "rdi", "rbp"]
 start_state = {
   "memory": [0, 0, 0, 0],
   "rax": 0,
   "rbx": 1,
   "rcx": 2,
   "rdx": 3,
-  "rsp": -1
+  "rsp": -1,
+  "rdi": -1,
+  "rbp": -1
 }
 
 end_state = {
@@ -18,13 +21,36 @@ end_state = {
   "rbx": 2,
   "rcx": 1,
   "rdx": 0,
-  "rsp": -1
+  "rsp": 6,
+  "rdi": -1,
+  "rbp": -1
 }
 # mov %rsp %rax
 
 #step1 = find_neighbours(start_state)
 # print(step1)
 
+class Function:
+  def __init__(self, name, input, output):
+    self.name = name
+    self.input = input
+    self.output = output
+
+minus_1_to_four = Function("minus1", -1, 4)
+four_to_five = Function("fourtofive", 4, 5)
+five_to_six = Function("fourtofive", 5, 6)
+
+functions = [minus_1_to_four, four_to_five, five_to_six]
+
+def index_functions(functions):
+  index = {}
+  for function in functions:
+    if function.input not in index:
+      index[function.input] = []
+    index[function.input].append(function)
+  return index
+
+function_index = index_functions(functions)
 
 def reconstruct_path(cameFrom, current):
   total_path = [current]
@@ -47,7 +73,7 @@ class Node():
     return self.state == other.state
 
   def __hash__(self):
-
+    
     return hash(str(self.state))
 
   def __lt__(self, other):
@@ -69,14 +95,61 @@ class Node():
 fScore = {}
 
 
-def find_neighbours(node, goal):
+def find_neighbours(node, goal, function_index):
   if node.neighbourscreated:
     return node.neighbours
 
   node.neighbourscreated = True
   candidates = []
-
+  found = False
+  found_function = False
   # candidates.append(Node(movement, node.fScore, "mov ${}, %{}".format(item, "rax")))
+
+  # for register in registers:
+  #   movement = dict(node.state)
+  #   movement["memory"] = list(node.state["memory"])
+  
+  #   movement[register] = -1
+  #   # movement["rax"] = -1
+  #   candidates.append(
+  #     Node(
+  #       movement, node.fScore,
+  #       "mov $-1, %{}".format(register)))
+  
+  for source_index, source_register in enumerate(registers):
+    
+    if node.state[source_register] in function_index:
+      # we have found a source parameter
+      for candidate_function in function_index[node.state[source_register]]: 
+        for destination_index, destination_register in enumerate(registers):
+          movement = dict(node.state)
+          movement["memory"] = list(node.state["memory"])
+          movement[destination_register] = candidate_function.output
+          
+          # print(movement[destination_register])
+          looking = True
+          instructions = []
+          instructions.append("call %{}({}) -> {}".format(candidate_function.name, node.state[source_register], candidate_function.output))
+          while looking:
+            if movement[destination_register] not in function_index or len(function_index[movement[destination_register]]) == 0:
+              looking = False
+              break
+            for candidate_function in     function_index[movement[destination_register]]:
+              movement[destination_register] = candidate_function.output
+              instructions.append("call %{}({}) -> {}".format(candidate_function.name, movement[destination_register], candidate_function.output))
+              
+          # movement["rax"] = -1
+          candidates.append(
+            Node(
+              movement, node.fScore, " ".join(instructions)
+              ))
+          found_function = True
+          break
+        if found_function:
+          break
+    if found_function:
+      break
+          
 
   if node.state["memory"] != goal.state["memory"]:
     for memory_location, value_in_memory in enumerate(goal.state["memory"]):
@@ -117,18 +190,20 @@ def find_neighbours(node, goal):
       continue
 
     if value == -1:
-      for register in ["rax", "rcx", "rdx", "rbx", "rsp"]:
+      for register in registers:
         movement = dict(node.state)
         movement["memory"] = list(node.state["memory"])
         movement[key] = movement[register]
         movement[register] = -1
         candidates.append(
           Node(movement, node.fScore, "mov %{}, %{}".format(register, key)))
+        
 
   node.neighbours = candidates
+  
+  # random.shuffle(candidates)
   # print(candidates)
   return candidates
-
 
 start_node = Node(start_state, fScore, "start")
 end_node = Node(end_state, fScore, "end")
@@ -170,20 +245,22 @@ def update_node(my_id, openSet, neighbour, gScore, myCameFrom, fScore, current,
       heapq.heappush(openSet, neighbour)
       for index, queue in enumerate(queues):
         if my_id != index:
-          queue.put((my_id, "update", (neighbour, gScore[neighbour],
-                                       fScore[neighbour], True)))
+          pass
+          # queue.put((my_id, "update", (neighbour, gScore[neighbour],
+                                       # fScore[neighbour], True)))
     else:
       for index, queue in enumerate(queues):
         if my_id != index:
-          queue.put((my_id, "update", (neighbour, gScore[neighbour],
-                                       fScore[neighbour], False)))
+          pass
+          # queue.put((my_id, "update", (neighbour, gScore[neighbour],
+                                       # fScore[neighbour], False)))
 
 
 # A* finds a path from start to goal.
 # h is the heuristic function. h(n) estimates the cost to reach goal from node n.
-def A_Star(start, goal, h, fScore, worker_len):
+def A_Star(start, goal, h, fScore, worker_len, _function_index):
 
-  def a_worker(my_id, my_queue, parent, queues):
+  def a_worker(my_id, my_queue, parent, queues, function_index):
     # parent.put(("hello", 6))
     origin = None
     myCameFrom = {}
@@ -328,7 +405,7 @@ def A_Star(start, goal, h, fScore, worker_len):
 
      
         # openSet.remove(current)
-        for index, neighbour in enumerate(find_neighbours(current, end)):
+        for index, neighbour in enumerate(find_neighbours(current, end, function_index)):
           
           if worker_len > index % worker_len == my_id:
 
@@ -360,7 +437,7 @@ def A_Star(start, goal, h, fScore, worker_len):
     print("creating worker {}".format(i))
 
     worker = multiprocessing.Process(target=a_worker,
-                                     args=(i, queues[i], parent, queues))
+                                     args=(i, queues[i], parent, queues, _function_index))
     workers.append(worker)
     worker.start()
     # The set of discovered nodes that may need to be (re-)expanded.
@@ -426,6 +503,6 @@ def A_Star(start, goal, h, fScore, worker_len):
 
 
 if __name__ == "__main__":
-  search = A_Star(start_node, end_node, h, fScore, 8)
+  search = A_Star(start_node, end_node, h, fScore, 8, function_index)
   print(search)
   print(search[-1].state)
