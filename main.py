@@ -27,10 +27,7 @@ end_state = {
   "rdi": -1,
   "rbp": -1
 }
-# mov %rsp %rax
 
-#step1 = find_neighbours(start_state)
-# print(step1)
 
 class Function:
   def __init__(self, name, input, output):
@@ -43,6 +40,14 @@ four_to_five = Function("fourtofive", 4, 5)
 five_to_six = Function("fivetosix", 5, 6)
 
 functions = [minus_1_to_four, four_to_five, five_to_six]
+
+def chunker(iter, size):
+    chunks = [];
+    if size < 1:
+        raise ValueError('Chunk size must be greater than 0.')
+    for i in range(0, len(iter), size):
+        chunks.append(iter[i:(i+size)])
+    return chunks
 
 def index_functions(functions):
   index = {}
@@ -64,7 +69,8 @@ def reconstruct_path(cameFrom, current):
 
 class Node():
 
-  def __init__(self, state, fScore, instruction):
+  def __init__(self, state, fScore, instruction, mode):
+    self.mode = mode
     self.state = state
     self.fScore = fScore
     self.neighbourscreated = False
@@ -72,11 +78,11 @@ class Node():
     self.instruction = instruction
 
   def __eq__(self, other):
-    return self.state == other.state
+    return self.state == other.state # and self.instruction == other.instruction
 
   def __hash__(self):
     
-    return hash(str(self.state))
+    return hash(str(self.state)) # + hash(self.instruction)
 
   def __lt__(self, other):
     if other not in fScore:
@@ -97,11 +103,17 @@ class Node():
 fScore = {}
 
 from collections import Counter
-def find_neighbours(node, goal, function_index):
+def find_neighbours(start_mode, node, goal, function_index, worker_len):
 
   if node.neighbourscreated:
     return node.neighbours
-
+  
+  mode = node.mode
+  if mode == -1:
+    mode = start_mode
+  mode = (mode + 1) % worker_len
+  # print(mode)
+  modeslen = 4
   node.neighbourscreated = True
   candidates = []
   instructions = []
@@ -111,8 +123,11 @@ def find_neighbours(node, goal, function_index):
   found_function = False
   # candidates.append(Node(movement, node.fScore, "mov ${}, %{}".format(item, "rax")))
 
+  clear_candidates = []
   for register in registers:
     if node.state[register] == goal.state[register]:
+      continue
+    if goal.state[register] != -1:
       continue
     c = Counter(filter(lambda x: not type(x) == list, node.state.values()))
     
@@ -124,11 +139,15 @@ def find_neighbours(node, goal, function_index):
   
     movement3[register] = -1
     # movement["rax"] = -1
-    candidates.append(
+    instruction = "mov $-1, %{}".format(register)
+    if instruction == node.instruction:
+      continue
+    clear_candidates.append(
       Node(
         movement3, node.fScore,
-        "mov $-1, %{}".format(register)))
-  
+        instruction, mode))
+
+  function_candidates = []
   for source_index, source_register in enumerate(registers):
     
     if node.state[source_register] in function_index:
@@ -155,11 +174,12 @@ def find_neighbours(node, goal, function_index):
           movement = dict(node.state)
           movement["memory"] = list(node.state["memory"])
           movement[destination_register] = candidate_function.output
-          
+          if movement == node.state:
+            continue
           # print(movement[destination_register])
           looking = True
           instructions = []
-          instructions.append("call %{}({}) -> {}".format(candidate_function.name, node.state[source_register], candidate_function.output))
+          instructions.append("call {}({}={}) -> {}={}".format(candidate_function.name, source_register, node.state[source_register], destination_register, candidate_function.output))
           # while looking:
           #   if movement[destination_register] not in function_index or len(function_index[movement[destination_register]]) == 0:
           #     looking = False
@@ -169,18 +189,19 @@ def find_neighbours(node, goal, function_index):
           #     instructions.append("call %{}({}) -> {}".format(candidate_function.name, movement[destination_register], candidate_function.output))
           
           # movement["rax"] = -1
-          candidates.append(
+          function_candidates.append(
             Node(
               movement, node.fScore, " ".join(instructions)
-              ))
+              , mode))
           found_function = True
           break
         if found_function:
           break
     if found_function:
       break
-          
 
+
+  memory_candidates = []
   if node.state["memory"] != goal.state["memory"]:
     for memory_location, value_in_memory in enumerate(goal.state["memory"]):
       if node.state["memory"][memory_location] != goal.state["memory"][
@@ -197,75 +218,106 @@ def find_neighbours(node, goal, function_index):
                   # We found a register that matches the desired memory value in memory
                   if current_value == value_in_memory:
                     # print("found wanted value {}".format(value_in_memory))
-                  
                     
+                    instructions = []
+                    movement = dict(node.state)
+                    movement["memory"] = list(node.state["memory"])
                     movement["memory"][memory_location] = value_in_memory
+                    if movement == node.state:
+                      continue
                     # movement["rax"] = -1
                     moveinstruction =  "mov %{}, (%{})".format(memory_location_key,
                                                 current_key)
                     instructions.append(moveinstruction)
-                    candidates.append(
+                    memory_candidates.append(
                      Node(
                        movement, node.fScore,
-                           " ".join(instructions)))
-                    found = True
+                           " ".join(instructions), mode))
+                    found_memory = True
                     break
-              if found:
+              if found_memory:
                 break
-        if found:
+        if found_memory:
           break
 
+  
+  move_candidates = []
   for key, value in node.state.items():
 
     if key == "memory":
       continue
-
- 
+   
+    
     for register in registers:
+      
+      if register == key:
+        continue  
       c = Counter(filter(lambda x: not type(x) == list, node.state.values()))
       d = Counter(filter(lambda x: not type(x) == list, goal.state.values()))
       if c[movement[key]] == 1 and d[movement[key]] > 0:
         continue
       
       movement2 = dict(node.state)
- 
-      movement2["memory"] = list(movement["memory"])
+  
+      movement2["memory"] = list(movement2["memory"])
       movement2[key] = movement2[register]
       # movement2[register] = -1
       myinstructions = []
       myinstructions.append("mov %{}, %{}".format(register, key))
-      candidates.append(
-      Node(movement2, node.fScore, " ".join(myinstructions)))
-        
+      if movement2 == node.state:
+        continue
+      move_candidates.append(
+      Node(movement2, node.fScore, " ".join(myinstructions), mode))
 
-  node.neighbours = candidates
+
+    
+   
   
   # random.shuffle(candidates)
-  # print(candidates)
-  return candidates
+  candidates_groups = [clear_candidates, memory_candidates, move_candidates, function_candidates]
+  available = []
+  for item in candidates_groups:
+    if len(item) > 0:
+      neighbours = chunker(item, worker_len)
+      me = random.choice(neighbours)
+      available.extend(me)
 
-start_node = Node(start_state, fScore, "start")
-end_node = Node(end_state, fScore, "end")
+  # neighbours = chunker(candidates, worker_len)
+  # me = random.choice(neighbours)
+  # print(candidates)
+  # me = neighbours[node.mode % len(neighbours)]
+  
+  node.neighbours = available
+  # print(available)
+  return available
+
+start_node = Node(start_state, fScore, "start", -1)
+end_node = Node(end_state, fScore, "end", -1)
 
 
 def h(start, goal):
   total = 0
+  matching = 0
   for key, value in start.state.items():
     if key == "memory":
+      if start.state[key] == goal.state[key]:
+        total = total - 5
       for index, item in enumerate(start.state[key]):
         if start.state[key][index] != goal.state[key][index]:
           # total = total + (goal.state[key][index] - goal.state[key][index])
           total = total + 1
         
+        
     else:
 
       if value != goal.state[key]:
         total = total + 1
-      
+      if value == goal.state[key]:
+        matching = matching + 1
 
  
   
-  
+  total = total - matching
   return total
 
 
@@ -289,15 +341,13 @@ def update_node(my_id, openSet, neighbour, gScore, myCameFrom, fScore, current,
       heapq.heappush(openSet, neighbour)
       for index, queue in enumerate(queues):
         if my_id != index:
-          # pass
-            queue.put((my_id, "update", (neighbour, gScore[neighbour],
-                                        fScore[neighbour], True)))
+          pass
     else:
       for index, queue in enumerate(queues):
         if my_id != index:
-          # pass
-            queue.put((my_id, "update", (neighbour, gScore[neighbour],
-                                        fScore[neighbour], False)))
+          pass
+          #  queue.put((my_id, "update", (neighbour, gScore[neighbour],
+          #                              fScore[neighbour], False)))
 
 
 # A* finds a path from start to goal.
@@ -310,9 +360,10 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
     myCameFrom = {}
     openSet = []
     end = None
+    sent = False
     received = my_queue.get()
-    my_queue.task_done()
-    print(received)
+    #my_queue.task_done()
+    # print(received)
     if received:
 
       _my_id, work, args = received
@@ -335,13 +386,14 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
     # For node n, fScore[n] := gScore[n] + h(n). fScore[n] represents our current best guess as to
     # how cheap a path could be from start to finish if it goes through n.
     fScore[origin] = h(origin, end)
-    print(fScore[origin])
+    # print(fScore[origin])
     thread_running = True
     found = False
+    
     while thread_running:
       # print("thread running loop")
 
-      for i in range(0, 30):
+      for i in range(0, 1000):
         try:
           # print("receive test")
 
@@ -349,7 +401,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
           
           # print("Process received {}".format(received))
           if received:
-            my_queue.task_done()
+            # my_queue.task_done()
             _my_id, work, args = received
             
             if work == "finish":
@@ -361,7 +413,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
               # except:
               #     pass
               # my_queue.close()
-              print("thread received stop message")
+              # print("thread received stop message")
 
               parent.put((my_id, "finished", (myCameFrom, None)))
               return
@@ -380,18 +432,19 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
              
               # heapq.heappush(openSet, neighbour)
               # heapq.heapify(openSet)
+              
 
         except Exception as e:
         
-          pass
+          break
 
 
       while len(openSet) > 0:
         # print("openset loop")
-        for i in range(0, 30):
+        for i in range(0, 1000):
           try:
             received = my_queue.get_nowait()
-            my_queue.task_done()
+            # my_queue.task_done()
             # print("Process received {}".format(received))
             if received:
               _my_id, work, args = received
@@ -407,7 +460,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
                 # except:
                 #   pass
                 # my_queue.close()
-                print("thread received stop message {}".format(my_id))
+                # print("thread received stop message {}".format(my_id))
                 parent.put((my_id, "finished", (myCameFrom, None)))
                 return
               if work == "newnode":
@@ -424,19 +477,20 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
                 # heapq.heappush(openSet, neighbour)
           except Exception as e:
 
-            pass
+            break
 
         # This operation can occur in O(Log(N)) time if openSet is a min-heap or a priority queue
         current = heapq.heappop(openSet) # the node in openSet having the lowest fScore[] value
         # heapq.heappush(openSet, current)
         # print(current.state)
+        
         if same(current, end):
-            print("found goal")
+            print("found goal {}".format(my_id))
             for index, queue in enumerate(queues):
               if index != my_id:
 
                 queue.put((index, "finish", 0))
-                print("asked {} to stop".format(index))
+                # print("asked {} to stop".format(index))
             parent.put((my_id, "finished", (myCameFrom, current)))
             thread_running = False
             found = True
@@ -450,10 +504,10 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
 
      
         # openSet.remove(current)
-        for index, neighbour in enumerate(find_neighbours(current, end, function_index)):
+        for index, neighbour in enumerate(find_neighbours(my_id % worker_len, current, end, function_index, worker_len)):
           
-          if worker_len > index % worker_len == my_id:
-
+          if sent == False and worker_len > index % worker_len == my_id:
+            sent = True
             for index, queue in enumerate(queues):
               if index != my_id:
                 queue.put((my_id, "newnode", (neighbour, current)))
@@ -468,15 +522,15 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
 
     if not found:
       parent.put((my_id, "finished", (myCameFrom, None)))
-    print("finished worker method")
+    # print("finished worker method")
 
   queues = []
   workers = []
   manager = multiprocessing.Manager()
 
-  parent = manager.Queue()
+  parent = multiprocessing.Queue(100)
   for i in range(0, worker_len):
-    queue = manager.Queue()
+    queue = multiprocessing.Queue(100)
     queues.append(queue)
   for i in range(0, worker_len):
     print("creating worker {}".format(i))
@@ -491,7 +545,8 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
   queues[0].put((0, "newnode", (start, goal)))
   for index, item in enumerate(queues[1:]):
     item.put((index, "start", (start, goal)))
-
+  start_time = time.time_ns()
+  end_time = 0
   running = True
   counter = 0
   results = []
@@ -499,13 +554,15 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
   current = None
   while running:
       received = parent.get()
-      parent.task_done()
+      # parent.task_done()
       _my_id, work, args = received
       if received:
         # print("Received {} {}".format(work, args))
         if work == "finished":
             # print("a thread finished")
             counter = counter + 1
+            if args[1] is not None:
+              end_time = time.time_ns()
             results.append(args)
             if counter == len(workers):
               print("all threads finished")
@@ -524,10 +581,12 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
         
 
   chosen_result = None
+  # results.reverse()
   for result in results:
     comeFrom.update(result[0])
     if result[1] is not None:
       chosen_result = result[1]
+      
 
   print("finished control loop")
   # For node n, cameFrom[n] is the node immediately preceding it on the cheapest path from the start
@@ -542,12 +601,15 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
     worker.join()
     print("joined worker")
   if chosen_result:
-    return reconstruct_path(comeFrom, chosen_result)
+    return reconstruct_path(comeFrom, chosen_result), start_time, end_time
   # Open set is empty but goal was never reached
-  return "failure"
+  return "failure", start_time
 
-
+import time
 if __name__ == "__main__":
-  search = A_Star(start_node, end_node, h, fScore, 8, function_index)
+  search, start_time, end_time = A_Star(start_node, end_node, h, fScore, 8, function_index)
   print(search)
   print(search[-1].state)
+  
+  duration = end_time - start_time
+  print(" {} milliseconds {} microseconds {}ns".format(duration / 1000000, duration / 1000, duration))
