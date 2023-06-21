@@ -66,7 +66,7 @@ def reconstruct_path(cameFrom, current):
     total_path.insert(0, current)
   return total_path
 
-
+import json
 class Node():
 
   def __init__(self, state, fScore, instruction, mode):
@@ -76,13 +76,14 @@ class Node():
     self.neighbourscreated = False
     self.neighbours = []
     self.instruction = instruction
-
+    self.hash = hash(self.instruction) + hash(str(json.dumps(self.state, sort_keys=True)))
+    
   def __eq__(self, other):
     return self.state == other.state # and self.instruction == other.instruction
 
   def __hash__(self):
     
-    return hash(str(self.state)) # + hash(self.instruction)
+    return self.hash # + hash(self.instruction)
 
   def __lt__(self, other):
     if other not in fScore:
@@ -276,10 +277,10 @@ def find_neighbours(start_mode, node, goal, function_index, worker_len):
   # random.shuffle(candidates)
   candidates_groups = [clear_candidates, memory_candidates, move_candidates, function_candidates]
   available = []
-  for item in candidates_groups:
+  for index, item in enumerate(candidates_groups): 
     if len(item) > 0:
       neighbours = chunker(item, worker_len)
-      me = random.choice(neighbours)
+      me = neighbours[start_mode % len(neighbours)]
       available.extend(me)
 
   # neighbours = chunker(candidates, worker_len)
@@ -288,6 +289,10 @@ def find_neighbours(start_mode, node, goal, function_index, worker_len):
   # me = neighbours[node.mode % len(neighbours)]
   
   node.neighbours = available
+  if len(available) == 0:
+    print("ERROR")
+    import sys
+    # sys.exit(1)
   # print(available)
   return available
 
@@ -365,17 +370,20 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
     #my_queue.task_done()
     # print(received)
     if received:
-
-      _my_id, work, args = received
+      if len(received) == 3:
+        
+        parent.put((my_id, "finished", (None, None)))
+        return
+      _my_id, work, one, two = received
       
 
       if work == "start":
-        origin = args[0]
-        end = args[1]
+        origin = one
+        end = two
       if work == "newnode":
-        origin = args[0]
-        end = args[1]
-        heapq.heappush(openSet, args[0])
+        origin = one
+        end = two
+        heapq.heappush(openSet, origin)
 
 
 
@@ -393,7 +401,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
     while thread_running:
       # print("thread running loop")
 
-      for i in range(0, 1000):
+      for i in range(0, 30):
         try:
           # print("receive test")
 
@@ -415,7 +423,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
               # my_queue.close()
               # print("thread received stop message")
 
-              parent.put((my_id, "finished", (myCameFrom, None)))
+              parent.put((my_id, "finished", (None, None)))
               return
             if work == "newnode":
               current = args[1]
@@ -441,7 +449,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
 
       while len(openSet) > 0:
         # print("openset loop")
-        for i in range(0, 1000):
+        for i in range(0, 30):
           try:
             received = my_queue.get_nowait()
             # my_queue.task_done()
@@ -461,7 +469,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
                 #   pass
                 # my_queue.close()
                 # print("thread received stop message {}".format(my_id))
-                parent.put((my_id, "finished", (myCameFrom, None)))
+                parent.put((my_id, "finished", (None, None)))
                 return
               if work == "newnode":
                 current = args[1]
@@ -485,7 +493,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
         # print(current.state)
         
         if same(current, end):
-            print("found goal {}".format(my_id))
+            print("found goal {} {} {}".format(my_id, current.state, end.state))
             for index, queue in enumerate(queues):
               if index != my_id:
 
@@ -542,9 +550,9 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
     # The set of discovered nodes that may need to be (re-)expanded.
     # Initially, only the start node is known.
     # This is usually implemented as a min-heap or priority queue rather than a hash-set.
-  queues[0].put((0, "newnode", (start, goal)))
+  queues[0].put((0, "newnode", start, goal))
   for index, item in enumerate(queues[1:]):
-    item.put((index, "start", (start, goal)))
+    item.put((index, "start", start, goal))
   start_time = time.time_ns()
   end_time = 0
   running = True
@@ -563,7 +571,7 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
             counter = counter + 1
             if args[1] is not None:
               end_time = time.time_ns()
-            results.append(args)
+              results.append(args)
             if counter == len(workers):
               print("all threads finished")
               
@@ -581,9 +589,11 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
         
 
   chosen_result = None
-  # results.reverse()
+  print(len(results))
   for result in results:
-    comeFrom.update(result[0])
+    if result[0] is not None:
+      comeFrom.update(result[0])
+      # are you comparing the variable or the value?
     if result[1] is not None:
       chosen_result = result[1]
       
@@ -593,7 +603,11 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
   # to n currently known.
 
   for queue in queues:
-    pass  # queue.close()
+    try:
+      while not queue.empty():
+        queue.get_nowait()
+    except:
+      break
   print("asked all queues to stop")
 
   for index, worker in enumerate(workers):
@@ -605,11 +619,25 @@ def A_Star(start, goal, h, fScore, worker_len, _function_index):
   # Open set is empty but goal was never reached
   return "failure", start_time
 
+def render(f, node):
+  for neighbour in node.neighbours:
+    f.write("\"{}\" -> \"{}\";\n".format(node.instruction, neighbour.instruction))
+    render(f, neighbour)
+
 import time
 if __name__ == "__main__":
-  search, start_time, end_time = A_Star(start_node, end_node, h, fScore, 8, function_index)
+  search, start_time, end_time = A_Star(start_node, end_node, h, fScore, 16, function_index)
   print(search)
   print(search[-1].state)
   
   duration = end_time - start_time
   print(" {} milliseconds {} microseconds {}ns".format(duration / 1000000, duration / 1000, duration))
+  # f = open("graph.dot", "w")
+  # f.write("digraph G {")
+  # render(f, search[0])
+  # f.write("}")
+  # f.close()
+  # from subprocess import Popen, PIPE
+  # dot = Popen(["/nix/store/j0bzk7zma74bx7f1aca8z3r74l8xk4zb-graphviz-7.0.0/bin/dot", "-Tpng", "-o", "graph.png", "graph.dot"], stdout=PIPE, stdin=PIPE)
+  # dot.communicate()
+  
