@@ -1,5 +1,7 @@
 # sliding-puzzle-codegen
 
+ * Live demo: https://replit.com/@Chronological/SlidingPuzzle3
+
 This is a experimental project that shows generating assembly code based on the movement of values through time.
 
 See this GIF https://giphy.com/embed/uOb99bhj98Mgi0UeBl
