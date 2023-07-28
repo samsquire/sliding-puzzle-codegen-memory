@@ -1,4 +1,4 @@
-# sliding-puzzle-codegen
+# sliding-puzzle-codegen-memory
 
  * Live demo: https://replit.com/@Chronological/SlidingPuzzle3
 
