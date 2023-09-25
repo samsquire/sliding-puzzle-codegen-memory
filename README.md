@@ -77,8 +77,6 @@ This repository implements parallel A*. We take advantage that we can produce di
 
 # LICENCE
 
-With the exception of RingBuffer.java and Left right concurrency control and Raft the code in this repository is the following licence:
-
 BSD Zero Clause License
 
 Copyright (C) 2023 by Samuel Michael Squire sam@samsquire.com
