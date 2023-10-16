@@ -8,7 +8,7 @@ This uses A* graph search algorithm to generate assembly code. I call it program
 
 See this GIF https://giphy.com/embed/uOb99bhj98Mgi0UeBl
 
-This is a sliding puzzle. Programming is often just moving data into the right places to get the computer to do the right thing. If you call a a function with the right arguments, you get the expected result. This program is based on the intuition that programming is largely just logistics.
+This is a sliding puzzle. Programming is often just moving data into the right places to get the computer to do the right thing. If you call a function with the right arguments, you get the expected result. This program is based on the intuition that programming is largely just logistics.
 
 
 My program synthesis/codegeneration is for searching through state space of a program to allocate variables to values and arrange state for function calls. It is meant to automate the boring part of programming which is boilerplate and moving things into place. It learns the hidden states - the function calls to get the register and memory to be what they should be.
@@ -45,7 +45,7 @@ If you run the program with these values, this generates the following sequence 
 [start, mov %rax, (%rdx), mov %rbx, (%rbx), mov %rcx, (%rcx), mov %rdx, (%rsp), mov %rax, %rsp, mov %rdx, %rax, mov %rsp, %rdx, mov %rcx, %rsp, mov %rbx, %rcx, mov %rsp, %rbx, call minus1(rdi=-1) -> rsp=4, call fourtofive(rsp=4) -> rsp=5, call fivetosix(rsp=5) -> rsp=6]
 ```
 
-The program worked out that it had to `mov %rax, (%rdx)` because %rax contains 0 and %rdx is meant to contain 0.
+The program worked out that it had to `mov %rax, (%rdx)` because %rax contains 0 and the memory location 0 is meant to contain 3.
 
 ```
   # These functions take in an argument of value type given by that number and return a value type given by the second paramter.
