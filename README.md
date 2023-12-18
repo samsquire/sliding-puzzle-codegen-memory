@@ -45,7 +45,7 @@ If you run the program with these values, this generates the following sequence 
 [start, mov %rax, (%rdx), mov %rbx, (%rbx), mov %rcx, (%rcx), mov %rdx, (%rsp), mov %rax, %rsp, mov %rdx, %rax, mov %rsp, %rdx, mov %rcx, %rsp, mov %rbx, %rcx, mov %rsp, %rbx, call minus1(rdi=-1) -> rsp=4, call fourtofive(rsp=4) -> rsp=5, call fivetosix(rsp=5) -> rsp=6]
 ```
 
-The program worked out that it had to `mov %rax, (%rdx)` because %rax contains 0 and the memory location 0 is meant to contain 3.
+The program worked out that it had to `mov %rax, (%rdx)` because %rdx contains 0 and the memory location 0 is meant to contain 3 and %rax is 3.
 
 ```
   # These functions take in an argument of value type given by that number and return a value type given by the second paramter.
